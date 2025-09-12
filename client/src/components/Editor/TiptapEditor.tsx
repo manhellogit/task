@@ -23,16 +23,24 @@ class EditorConnection {
   private backOff: number;
   private editor: any;
   private isReceiving: boolean = false;
-  private isReceivingRef: React.MutableRefObject<boolean>; // Add this
+  private isReceivingRef: React.MutableRefObject<boolean>;
+  private onVersionChange: (version: number) => void; // Add this callback
 
-  constructor(socket: any, docId: string, editor: any, isReceivingRef: React.MutableRefObject<boolean>) {
+  constructor(
+    socket: any, 
+    docId: string, 
+    editor: any, 
+    isReceivingRef: React.MutableRefObject<boolean>,
+    onVersionChange: (version: number) => void // Add parameter
+  ) {
     this.socket = socket;
     this.docId = docId;
     this.clientID = Math.floor(Math.random() * 0xFFFFFFFF);
     this.state = 'start';
     this.backOff = 0;
     this.editor = editor;
-    this.isReceivingRef = isReceivingRef; // Store the ref
+    this.isReceivingRef = isReceivingRef;
+    this.onVersionChange = onVersionChange; // Store callback
     this.start();
   }
 
@@ -68,6 +76,9 @@ class EditorConnection {
       steps: steps.map(s => s.toJSON()),
       clientID: this.clientID
     });
+
+    // Update version display after sending
+    this.updateVersionDisplay();
   }
 
   handlePullResponse(data: any) {
@@ -97,7 +108,11 @@ class EditorConnection {
         // Apply transaction using TipTap's dispatch method
         this.editor.view.dispatch(tr);
         
-        console.log(`✅ Applied ${steps.length} steps, version now: ${getVersion(this.editor.state)}`);
+        const newVersion = getVersion(this.editor.state);
+        console.log(`✅ Applied ${steps.length} steps, version now: ${newVersion}`);
+        
+        // Update version display after receiving
+        this.updateVersionDisplay();
         
       } catch (error) {
         console.error('❌ Error applying steps:', error);
@@ -110,10 +125,10 @@ class EditorConnection {
       }, 10);
     }
 
-    // Continue polling
+    // Continue polling with reduced frequency
     if (this.state === 'poll' || this.state === 'send') {
       this.state = 'poll';
-      setTimeout(() => this.poll(), 100);
+      setTimeout(() => this.poll(), 1000);
     }
   }
 
@@ -128,6 +143,14 @@ class EditorConnection {
     console.log(`✅ Steps confirmed at version ${data.version}`);
     this.state = 'poll';
     this.poll();
+  }
+
+  // Helper method to update version in UI
+  private updateVersionDisplay() {
+    if (this.editor) {
+      const currentVersion = getVersion(this.editor.state);
+      this.onVersionChange(currentVersion);
+    }
   }
 
   recover() {
@@ -154,11 +177,17 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
   const { socket, isConnected } = useSocket();
   const [loading, setLoading] = useState(true);
   const [clientId] = useState(() => Math.floor(Math.random() * 0xFFFFFFFF));
+  const [currentVersion, setCurrentVersion] = useState(0); // Direct version state
   const connectionRef = useRef<EditorConnection | null>(null);
   const isReceivingRef = useRef(false);
   
   const params = useParams();
   const documentId = propDocumentId || params.documentId || 'default-document';
+
+  // Version update callback
+  const handleVersionChange = useCallback((version: number) => {
+    setCurrentVersion(version);
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -167,21 +196,28 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     content: '<p>Welcome to the collaborative editor! Start typing...</p>',
     immediatelyRender: false,
     onCreate: ({ editor }) => {
-      // Add collaboration plugin
-      const collabPlugin = collab({ 
-        version: 0, 
-        clientID: clientId 
-      });
-      
-      const newState = editor.state.reconfigure({
-        plugins: [...editor.state.plugins, collabPlugin]
-      });
-      
-      editor.view.updateState(newState);
-      
-      // Initialize connection
-      if (socket && isConnected) {
-        initializeConnection(editor);
+      try {
+        // Add collaboration plugin
+        const collabPlugin = collab({ 
+          version: 0, 
+          clientID: clientId 
+        });
+        
+        const newState = editor.state.reconfigure({
+          plugins: [...editor.state.plugins, collabPlugin]
+        });
+        
+        editor.view.updateState(newState);
+        
+        // Set initial version
+        setCurrentVersion(0);
+        
+        // Initialize connection
+        if (socket && isConnected) {
+          initializeConnection(editor);
+        }
+      } catch (error) {
+        console.error('Error in editor onCreate:', error);
       }
     },
     onUpdate: ({ editor, transaction }) => {
@@ -198,22 +234,32 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
   const initializeConnection = useCallback((editorInstance: any) => {
     if (!socket || connectionRef.current) return;
 
-    // Pass the isReceivingRef to the connection class
-    const connection = new EditorConnection(socket, documentId, editorInstance, isReceivingRef);
-    connectionRef.current = connection;
+    try {
+      const connection = new EditorConnection(
+        socket, 
+        documentId, 
+        editorInstance, 
+        isReceivingRef,
+        handleVersionChange // Pass the version callback
+      );
+      connectionRef.current = connection;
 
-    // Set up socket listeners
-    socket.on('pullUpdateResponse', (data: any) => {
-      connection.handlePullResponse(data);
-    });
+      // Set up socket listeners
+      socket.on('pullUpdateResponse', (data: any) => {
+        connection.handlePullResponse(data);
+      });
 
-    socket.on('pushUpdateResponse', (data: any) => {
-      connection.handlePushResponse(data);
-    });
+      socket.on('pushUpdateResponse', (data: any) => {
+        connection.handlePushResponse(data);
+      });
 
-    setLoading(false);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error initializing connection:', error);
+      setLoading(false);
+    }
 
-  }, [socket, documentId]);
+  }, [socket, documentId, handleVersionChange]);
 
   useEffect(() => {
     if (socket && isConnected && editor && !connectionRef.current) {
@@ -251,8 +297,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     );
   }
 
-  const editorVersion = getVersion(editor.state);
-
   return (
     <div className="editor-container min-h-[500px] bg-white">
       <div className="border-b">
@@ -274,7 +318,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
         <div className="flex items-center justify-between">
           <span>
             Status: <span className="text-green-600">Connected</span> | 
-            Version: v{editorVersion} | 
+            Version: <span className="font-semibold text-blue-600">v{currentVersion}</span> | 
             Client: {clientId.toString(16).slice(-6)} |
             Document: {documentId}
           </span>
