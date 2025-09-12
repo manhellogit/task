@@ -38,7 +38,7 @@ interface DocumentStep {
       if (!this.documents.has(documentId)) {
         this.documents.set(documentId, {
           documentId,
-          currentVersion: 1,
+          currentVersion: 0,
           steps: [],
           lastUpdated: new Date(),
           clients: new Set(),
@@ -90,60 +90,62 @@ interface DocumentStep {
         }
     }
   
-    async applyStep(documentId: string, stepData: DocumentStep): Promise<StepApplicationResult> {
-      const docFile = this.documents.get(documentId);
-      
-      if (!docFile) {
-        await this.createDocumentFile(documentId);
-        return this.applyStep(documentId, stepData);
-      }
+   // In the applyStep method, change the version conflict check:
+async applyStep(documentId: string, stepData: DocumentStep): Promise<StepApplicationResult> {
+  const docFile = this.documents.get(documentId);
   
-      // Version conflict check
-      if (stepData.version != docFile.currentVersion) {
+  if (!docFile) {
+    await this.createDocumentFile(documentId);
+    return this.applyStep(documentId, stepData);
+  }
 
-        return {
-          success: false,
-          error: 'Version conflict',
-          currentVersion: docFile.currentVersion
-        };
-      }
-  
-      try {
-        // Apply the step to document content
-        const newVersion = docFile.currentVersion + 1;
-        const appliedStep = this.processStep(docFile.content, stepData.step);
-        
-        // Update document content with the applied step
-        docFile.content = appliedStep.newContent || docFile.content;
-        
-        // Add step to history
-        const stepToStore: DocumentStep = {
-          ...stepData,
-          version: newVersion,
-          applied: true
-        };
-        
-        docFile.steps.push(stepToStore);
-        docFile.currentVersion = newVersion;
-        docFile.lastUpdated = new Date();
-        
-        console.log(`📝 Applied step to document ${documentId}, new version: ${newVersion}`);
-        
-        return {
-          success: true,
-          newVersion,
-          appliedStep: stepData.step
-        };
-        
-      } catch (error) {
-        console.error(`❌ Error applying step to document ${documentId}:`, error);
-        return {
-          success: false,
-          error: 'Failed to process step',
-          currentVersion: docFile.currentVersion
-        };
-      }
-    }
+  console.log(`📝 Attempting to apply step: client version ${stepData.version}, server version ${docFile.currentVersion}`);
+
+  // Version conflict check - should match exactly
+  if (stepData.version !== docFile.currentVersion) {
+    console.log(`❌ Version mismatch: expected ${docFile.currentVersion}, got ${stepData.version}`);
+    return {
+      success: false,
+      error: 'Invalid version',
+      currentVersion: docFile.currentVersion
+    };
+  }
+
+  try {
+    // Apply the step
+    const newVersion = docFile.currentVersion + 1;
+    
+    // Store the step with the NEW version
+    const stepToStore: DocumentStep = {
+      ...stepData,
+      version: newVersion,
+      applied: true,
+      persisted: false
+    };
+    
+    docFile.steps.push(stepToStore);
+    docFile.currentVersion = newVersion;
+    docFile.lastUpdated = new Date();
+    
+    console.log(`✅ Applied step to document ${documentId}, new version: ${newVersion}`);
+    
+    return {
+      success: true,
+      newVersion,
+      appliedStep: stepData.step
+    };
+    
+  } catch (error) {
+    console.error(`❌ Error applying step to document ${documentId}:`, error);
+    return {
+      success: false,
+      error: 'Failed to process step',
+      currentVersion: docFile.currentVersion
+    };
+  }
+}
+
+
   
     private processStep(currentContent: any, step: any): { newContent: any } {
       // This is where you'd implement your step application logic

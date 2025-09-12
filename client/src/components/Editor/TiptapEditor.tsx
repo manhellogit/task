@@ -7,6 +7,7 @@ import { useParams } from 'react-router-dom';
 import { Step } from '@tiptap/pm/transform';
 import EditorToolbar from './EditorToolbar';
 import WordCounter from './WordCounter';
+import { usePersistedUser } from '../../hooks/usePersistedUser';
 
 interface TiptapEditorProps {
   documentId?: string;
@@ -31,11 +32,12 @@ class EditorConnection {
     docId: string, 
     editor: any, 
     isReceivingRef: React.MutableRefObject<boolean>,
-    onVersionChange: (version: number) => void // Add parameter
+    onVersionChange: (version: number) => void, // Add parameter
+    clientID: number
   ) {
     this.socket = socket;
     this.docId = docId;
-    this.clientID = Math.floor(Math.random() * 0xFFFFFFFF);
+    this.clientID = clientID;
     this.state = 'start';
     this.backOff = 0;
     this.editor = editor;
@@ -128,7 +130,7 @@ class EditorConnection {
     // Continue polling with reduced frequency
     if (this.state === 'poll' || this.state === 'send') {
       this.state = 'poll';
-      setTimeout(() => this.poll(), 1000);
+      setTimeout(() => this.poll(), 2000);
     }
   }
 
@@ -176,7 +178,8 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
 }) => {
   const { socket, isConnected } = useSocket();
   const [loading, setLoading] = useState(true);
-  const [clientId] = useState(() => Math.floor(Math.random() * 0xFFFFFFFF));
+  const { user } = usePersistedUser();
+const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
   const [currentVersion, setCurrentVersion] = useState(0); // Direct version state
   const connectionRef = useRef<EditorConnection | null>(null);
   const isReceivingRef = useRef(false);
@@ -240,7 +243,8 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
         documentId, 
         editorInstance, 
         isReceivingRef,
-        handleVersionChange // Pass the version callback
+        handleVersionChange, // Pass the version callback
+        clientId
       );
       connectionRef.current = connection;
 
@@ -317,11 +321,12 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
       <div className="border-t px-4 py-2 bg-gray-50 text-xs text-gray-500">
         <div className="flex items-center justify-between">
           <span>
-            Status: <span className="text-green-600">Connected</span> | 
-            Version: <span className="font-semibold text-blue-600">v{currentVersion}</span> | 
-            Client: {clientId.toString(16).slice(-6)} |
-            Document: {documentId}
-          </span>
+  Status: <span className="text-green-600">Connected</span> | 
+  Version: <span className="font-semibold text-blue-600">v{currentVersion}</span> | 
+  User: {user?.username || 'Anonymous'} | 
+  Client: {clientId.toString(16).slice(-6)} |
+  Document: {documentId}
+</span>
           <span className="text-green-600 flex items-center">
             <span className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></span>
             Collaborative editing active
