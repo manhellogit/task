@@ -1,76 +1,133 @@
-# React + TypeScript + Vite
+# Cadmus Collaborative Editor – Frontend (Client)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the frontend client for the Cadmus collaborative editing homework task. It is built with **React + TypeScript**, powered by **TipTap (ProseMirror-based)** for the editor, and styled with **Tailwind CSS**.
 
-Currently, two official plugins are available:
+The client enables online rich-text editing, a live word counter, user authentication via email, and real-time collaborative editing via a backend API using ProseMirror’s collaboration plugin and WebSockets (**Socket.IO**).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## Expanding the ESLint configuration
+## Features
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Rich-text editor powered by **TipTap (ProseMirror)**
+- Live word and character counter with debounce updates
+- Real-time collaboration using ProseMirror’s operational transform algorithm
+- Persistence support – catches up latest document on refresh
+- User sessions with simple email login, stored in `localStorage`
+- Collaborator display with user ID and status indicators
+- Auto-save of document content locally
+- Responsive UI inspired by modern editors like **Notion/Google Docs**
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+## Prerequisites
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- **Node.js** (>= 18 recommended)  
+- **npm** (comes with Node.js)
+
+---
+
+## Getting Started
+
+### 1. Install dependencies
+
+```bash
+cd client
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 2. Start development server
+---
+```bash
+npm run dev
 ```
+This runs the Vite React development server on:
+http://localhost:3000
 
-bullet proof react 
-npm rc
-strict mode
-try tailwind theme
-error boundary
-fallback page
+---
+
+### 3. Connect to backend
+
+The frontend expects the backend server to run separately on:
+
+http://localhost:4000 (WebSocket)
+
+http://localhost:4000/api (REST endpoints)
+
+Make sure the backend is started before testing collaboration.
+
+---
+
+### Available Scripts
+
+```bash
+npm run dev      # Start frontend dev server with Vite
+npm run build    # Type-check and build production output
+npm run preview  # Preview the production build locally
+npm run lint     # Run ESLint checks
+```
+---
+
+### 📂 Project Structure
+
+
+```text
+client/
+├── index.html              # Vite entry point
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+└── src/
+    ├── App.tsx             # Root React app with routes & Socket provider
+    ├── pages/
+    │   └── EditorPage.tsx  # Main editor page with auth & editor
+    ├── components/
+    │   ├── Editor/
+    │   │   ├── TiptapEditor.tsx   # ProseMirror + TipTap collaborative editor
+    │   │   ├── EditorToolbar.tsx  # Rich text toolbar
+    │   │   └── WordCounter.tsx    # Live word/character counter
+    │   ├── EmailLogin.tsx         # Email login form
+    │   └── UserHeader.tsx         # User profile header
+    ├── contexts/SocketContext.tsx # Provides socket.io client
+    ├── hooks/                     # Custom hooks
+    │   ├── useWordCount.ts
+    │   ├── useEmailAuth.ts
+    │   ├── usePersistedUser.ts
+    │   └── useDebouncedSend.ts
+    ├── services/                  # Collaboration & API connections
+    │   ├── EditorConnection.ts
+    │   ├── collabClient.ts
+    │   └── api.ts
+    ├── types/collab.ts            # Collaboration-related types
+    └── utils/wordCount.ts         # Word count helper
+```
+---
+
+### How Collaboration Works
+
+1. **Editor Initialization** → TipTap’s editor is extended with ProseMirror’s collab plugin  
+2. **Synchronization** → Each client uses `sendableSteps` and `receiveTransaction` to push and pull document changes  
+3. **Communication** → `EditorConnection` and `SocketContext` handle WebSocket events (`pushUpdates`, `pullUpdates`)  
+4. **Resilience** → Invalid step ranges trigger a resync of the document from version 0  
+5. **Persistence** → Local `localStorage` saves user info + document snapshots for recovery  
+
+---
+
+### Notes
+
+- **Default backend API**:  
+  - `http://localhost:4000/api` → REST endpoints  
+  - `http://localhost:4000` → WebSocket  
+
+- If you run the backend on a different port/host, update the URLs in:  
+  - `src/services/api.ts`  
+  - `src/contexts/SocketContext.tsx`  
+
+---
+
+## 🛠️ Troubleshooting
+
+- **Socket not connecting** → Ensure backend server is running on port `4000`  
+- **Word counter not updating** → Check the editor is initialized and content is present  
+- **Steps version mismatch** → A resync request should automatically restore document state  

@@ -2,175 +2,15 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useSocket } from '../../contexts/SocketContext';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { collab, sendableSteps, receiveTransaction, getVersion } from '@tiptap/pm/collab';
+import { collab, sendableSteps, getVersion } from '@tiptap/pm/collab';
 import { useParams } from 'react-router-dom';
-import { Step } from '@tiptap/pm/transform';
+import { useEmailAuth } from '../../hooks/useEmailAuth';
 import EditorToolbar from './EditorToolbar';
 import WordCounter from './WordCounter';
-import { usePersistedUser } from '../../hooks/usePersistedUser';
+import { EditorConnection } from '../../services/EditorConnection';
 
 interface TiptapEditorProps {
   documentId?: string;
-}
-
-// Connection states
-type CommState = 'start' | 'poll' | 'send' | 'recover';
-
-class EditorConnection {
-  private socket: any;
-  private docId: string;
-  private clientID: number;
-  private state: CommState;
-  private backOff: number;
-  private editor: any;
-  private isReceiving: boolean = false;
-  private isReceivingRef: React.MutableRefObject<boolean>;
-  private onVersionChange: (version: number) => void; // Add this callback
-
-  constructor(
-    socket: any, 
-    docId: string, 
-    editor: any, 
-    isReceivingRef: React.MutableRefObject<boolean>,
-    onVersionChange: (version: number) => void, // Add parameter
-    clientID: number
-  ) {
-    this.socket = socket;
-    this.docId = docId;
-    this.clientID = clientID;
-    this.state = 'start';
-    this.backOff = 0;
-    this.editor = editor;
-    this.isReceivingRef = isReceivingRef;
-    this.onVersionChange = onVersionChange; // Store callback
-    this.start();
-  }
-
-  start() {
-    console.log('🔧 Starting collaboration connection...');
-    this.state = 'poll';
-    this.poll();
-  }
-
-  poll() {
-    if (this.state !== 'poll' || !this.editor) return;
-    
-    const version = getVersion(this.editor.state);
-    console.log(`🔄 Polling for updates from version ${version}`);
-    
-    this.socket.emit('pullUpdates', {
-      docId: this.docId,
-      version: version
-    });
-  }
-
-  send(steps: any[]) {
-    if (!this.editor) return;
-    
-    this.state = 'send';
-    const version = getVersion(this.editor.state);
-    
-    console.log(`📤 Sending ${steps.length} steps from version ${version}`);
-    
-    this.socket.emit('pushUpdates', {
-      docId: this.docId,
-      version: version,
-      steps: steps.map(s => s.toJSON()),
-      clientID: this.clientID
-    });
-
-    // Update version display after sending
-    this.updateVersionDisplay();
-  }
-
-  handlePullResponse(data: any) {
-    if (data.error) {
-      console.error('❌ Pull error:', data.error);
-      this.recover();
-      return;
-    }
-
-    if (data.steps && data.steps.length > 0 && this.editor && !this.isReceiving) {
-      console.log(`📥 Received ${data.steps.length} steps`);
-      
-      // Set both flags to prevent recursive sending
-      this.isReceiving = true;
-      this.isReceivingRef.current = true;
-      
-      try {
-        const steps = data.steps.map((stepJSON: any) => 
-          Step.fromJSON(this.editor.schema, stepJSON)
-        );
-        
-        const clientIDs = data.steps.map((step: any) => step.clientID || 0);
-        
-        // Use receiveTransaction to apply steps
-        const tr = receiveTransaction(this.editor.state, steps, clientIDs);
-        
-        // Apply transaction using TipTap's dispatch method
-        this.editor.view.dispatch(tr);
-        
-        const newVersion = getVersion(this.editor.state);
-        console.log(`✅ Applied ${steps.length} steps, version now: ${newVersion}`);
-        
-        // Update version display after receiving
-        this.updateVersionDisplay();
-        
-      } catch (error) {
-        console.error('❌ Error applying steps:', error);
-      }
-      
-      // Reset flags after a short delay
-      setTimeout(() => {
-        this.isReceiving = false;
-        this.isReceivingRef.current = false;
-      }, 10);
-    }
-
-    // Continue polling with reduced frequency
-    if (this.state === 'poll' || this.state === 'send') {
-      this.state = 'poll';
-      setTimeout(() => this.poll(), 2000);
-    }
-  }
-
-  handlePushResponse(data: any) {
-    if (data.error) {
-      console.error('❌ Push error:', data.error);
-      this.state = 'poll';
-      this.poll();
-      return;
-    }
-
-    console.log(`✅ Steps confirmed at version ${data.version}`);
-    this.state = 'poll';
-    this.poll();
-  }
-
-  // Helper method to update version in UI
-  private updateVersionDisplay() {
-    if (this.editor) {
-      const currentVersion = getVersion(this.editor.state);
-      this.onVersionChange(currentVersion);
-    }
-  }
-
-  recover() {
-    console.log('🔄 Recovering connection...');
-    this.state = 'recover';
-    this.backOff = Math.min((this.backOff || 200) * 2, 6000);
-    
-    setTimeout(() => {
-      if (this.state === 'recover') {
-        this.state = 'poll';
-        this.poll();
-      }
-    }, this.backOff);
-  }
-
-  close() {
-    // Cleanup
-  }
 }
 
 const TiptapEditor: React.FC<TiptapEditorProps> = ({ 
@@ -178,14 +18,45 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
 }) => {
   const { socket, isConnected } = useSocket();
   const [loading, setLoading] = useState(true);
-  const { user } = usePersistedUser();
-const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
-  const [currentVersion, setCurrentVersion] = useState(0); // Direct version state
+  const { user } = useEmailAuth();
+  const clientId = user?.clientId || 0;
+  const [currentVersion, setCurrentVersion] = useState(0);
   const connectionRef = useRef<EditorConnection | null>(null);
   const isReceivingRef = useRef(false);
   
   const params = useParams();
   const documentId = propDocumentId || params.documentId || 'default-document';
+
+  const [savedContent, setSavedContent] = useState<any>(null);
+
+  // Load saved content only when we have a stable user
+  useEffect(() => {
+    if (user && documentId && user.email) {
+      const contentKey = `cadmus-content-${documentId}-${user.email}`;
+      const saved = localStorage.getItem(contentKey);
+      if (saved) {
+        try {
+          const content = JSON.parse(saved);
+          setSavedContent(content);
+          console.log('📄 Loaded saved content for user:', user.email);
+        } catch (error) {
+          console.error('❌ Failed to parse saved content:', error);
+          setSavedContent(null);
+        }
+      } else {
+        setSavedContent(null);
+      }
+    }
+  }, [user?.email, documentId]);
+
+  // Content change callback
+  const handleContentChange = useCallback((content: any) => {
+    if (user && documentId && user.email) {
+      const contentKey = `cadmus-content-${documentId}-${user.email}`;
+      localStorage.setItem(contentKey, JSON.stringify(content));
+      console.log('💾 Saved content for user:', user.email);
+    }
+  }, [user?.email, documentId]);
 
   // Version update callback
   const handleVersionChange = useCallback((version: number) => {
@@ -196,11 +67,10 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
     extensions: [
       StarterKit,
     ],
-    content: '<p>Welcome to the collaborative editor! Start typing...</p>',
+    content: savedContent || '<p>Welcome to the collaborative editor! Start typing...</p>',
     immediatelyRender: false,
     onCreate: ({ editor }) => {
       try {
-        // Add collaboration plugin
         const collabPlugin = collab({ 
           version: 0, 
           clientID: clientId 
@@ -211,12 +81,9 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
         });
         
         editor.view.updateState(newState);
-        
-        // Set initial version
         setCurrentVersion(0);
         
-        // Initialize connection
-        if (socket && isConnected) {
+        if (socket && isConnected && user) {
           initializeConnection(editor);
         }
       } catch (error) {
@@ -224,18 +91,25 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
       }
     },
     onUpdate: ({ editor, transaction }) => {
-      // Only send steps for user changes, not received steps
       if (transaction.docChanged && !isReceivingRef.current && connectionRef.current) {
-        const sendable = sendableSteps(editor.state);
-        if (sendable && sendable.steps.length > 0) {
-          connectionRef.current.send(Array.from(sendable.steps));
-        }
+        
+        setTimeout(() => {
+          if (!isReceivingRef.current && connectionRef.current) {
+            const sendable = sendableSteps(editor.state);
+            if (sendable && sendable.steps.length > 0) {
+              console.log(`🎯 Preparing to send ${sendable.steps.length} steps from version ${getVersion(editor.state)}`);
+              connectionRef.current.send(Array.from(sendable.steps));
+            }
+          }
+        }, 200);
+        
+        handleContentChange(editor.getJSON());
       }
     },
-  });
+  }, [savedContent, clientId]);
 
   const initializeConnection = useCallback((editorInstance: any) => {
-    if (!socket || connectionRef.current) return;
+    if (!socket || connectionRef.current || !user) return;
 
     try {
       const connection = new EditorConnection(
@@ -243,12 +117,12 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
         documentId, 
         editorInstance, 
         isReceivingRef,
-        handleVersionChange, // Pass the version callback
+        handleVersionChange,
+        handleContentChange,
         clientId
       );
       connectionRef.current = connection;
 
-      // Set up socket listeners
       socket.on('pullUpdateResponse', (data: any) => {
         connection.handlePullResponse(data);
       });
@@ -263,10 +137,10 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
       setLoading(false);
     }
 
-  }, [socket, documentId, handleVersionChange]);
+  }, [socket, documentId, handleVersionChange, handleContentChange, clientId, user]);
 
   useEffect(() => {
-    if (socket && isConnected && editor && !connectionRef.current) {
+    if (socket && isConnected && editor && !connectionRef.current && user) {
       initializeConnection(editor);
     }
 
@@ -280,7 +154,7 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
         socket.off('pushUpdateResponse');
       }
     };
-  }, [socket, isConnected, editor, initializeConnection]);
+  }, [socket, isConnected, editor, initializeConnection, user]);
 
   if (!isConnected) {
     return (
@@ -302,16 +176,21 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
   }
 
   return (
-    <div className="editor-container min-h-[500px] bg-white">
+    <div className="editor-container min-h-screen bg-white">
+     
+      
       <div className="border-b">
         <EditorToolbar editor={editor} />
       </div>
 
-      <div className="p-4">
-        <EditorContent 
-          editor={editor} 
-          className="prose prose-sm sm:prose lg:prose-lg xl:prose-xl mx-auto focus:outline-none min-h-[400px] border-none"
-        />
+      <div className="editor-scroll-container" style={{ height: 'calc(100vh - 200px)', overflow: 'auto' }}>
+        <div className="p-4">
+          <EditorContent 
+            editor={editor} 
+            className="prose prose-sm sm:prose lg:prose-lg xl:prose-xl mx-auto focus:outline-none border-none"
+            style={{ maxWidth: 'none' }}
+          />
+        </div>
       </div>
       
       <div className="border-t">
@@ -321,12 +200,11 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
       <div className="border-t px-4 py-2 bg-gray-50 text-xs text-gray-500">
         <div className="flex items-center justify-between">
           <span>
-  Status: <span className="text-green-600">Connected</span> | 
-  Version: <span className="font-semibold text-blue-600">v{currentVersion}</span> | 
-  User: {user?.username || 'Anonymous'} | 
-  Client: {clientId.toString(16).slice(-6)} |
-  Document: {documentId}
-</span>
+            Status: <span className="text-green-600">Connected</span> | 
+            Version: <span className="font-semibold text-blue-600">v{currentVersion}</span> | 
+            User: <span className="font-semibold text-indigo-600">{user!.email}</span> |
+            Document: {documentId}
+          </span>
           <span className="text-green-600 flex items-center">
             <span className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></span>
             Collaborative editing active
@@ -335,7 +213,7 @@ const clientId = user?.clientId || Math.floor(Math.random() * 0xFFFFFFFF);
       </div>
       
       <div className="border-t px-4 py-2 bg-green-50 text-xs text-green-600">
-        <span>🎯 Real-time collaborative editing! Open another tab to test collaboration.</span>
+        <span>🎯 Real-time collaborative editing! Share this document with others using the same link.</span>
       </div>
     </div>
   );

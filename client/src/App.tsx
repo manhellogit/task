@@ -7,10 +7,9 @@ function App() {
   return (
     <SocketProvider>
       <Router>
-        <div className="App min-h-screen bg-gray-50">
+        <div className="App min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
           <Routes>
             <Route path="/" element={<EditorPage />} />
-            <Route path="/document/:documentId" element={<EditorPage />} />
           </Routes>
         </div>
       </Router>

@@ -90,7 +90,8 @@ interface DocumentStep {
         }
     }
   
-   // In the applyStep method, change the version conflict check:
+
+// In the applyStep method, change the version conflict check:
 async applyStep(documentId: string, stepData: DocumentStep): Promise<StepApplicationResult> {
   const docFile = this.documents.get(documentId);
   
@@ -144,6 +145,8 @@ async applyStep(documentId: string, stepData: DocumentStep): Promise<StepApplica
     };
   }
 }
+
+
 
 
   
