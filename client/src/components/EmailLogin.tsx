@@ -1,5 +1,7 @@
+// client/src/components/EmailLogin.tsx
 import React, { useState } from 'react';
 import { useEmailAuth } from '../hooks/useEmailAuth';
+import { useNavigate } from 'react-router-dom';
 
 interface EmailLoginProps {
   onLogin?: () => void;
@@ -10,31 +12,30 @@ const EmailLogin: React.FC<EmailLoginProps> = ({ onLogin }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const { loginWithEmail } = useEmailAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email.trim()) {
       setError('Please enter your email');
       return;
     }
 
-    console.log('📧 EmailLogin - Submitting login for:', email);
     setIsSubmitting(true);
     setError('');
 
     try {
       const success = await loginWithEmail(email.trim());
-      
       if (success) {
-        console.log('✅ EmailLogin - Login successful');
         setEmail('');
-        onLogin?.(); 
+        // Prefer callback if provided, else navigate to editor root
+        if (onLogin) onLogin();
+        else navigate('/', { replace: true });
       } else {
         setError('Failed to join. Please check your email format.');
       }
-    } catch (err) {
-      console.error('❌ EmailLogin - Login error:', err);
+    } catch {
       setError('Something went wrong. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -42,7 +43,7 @@ const EmailLogin: React.FC<EmailLoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-gradient-to-br from-indigo-300/20 to-purple-300/20 rounded-full blur-3xl"></div>

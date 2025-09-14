@@ -1,23 +1,26 @@
 // client/src/components/UserHeader.tsx
 import React from 'react';
 import { useEmailAuth } from '../hooks/useEmailAuth';
+import { useNavigate } from 'react-router-dom';
 
 const UserHeader: React.FC = () => {
   const { user, logout, isAuthenticated } = useEmailAuth();
+  const navigate = useNavigate();
 
-  // FIXED: More thorough user check
+  // If not authenticated, don't render header
   if (!user || !isAuthenticated || !user.email) {
-    console.log('👤 UserHeader - No authenticated user, not rendering');
     return null;
   }
 
-  const handleLogout = () => {
-    console.log('👋 UserHeader - Logout clicked');
-    
-    if (window.confirm('Are you sure you want to sign out?')) {
-      console.log('👋 UserHeader - User confirmed logout');
-      logout();
-    }
+  const handleLogout = async () => {
+    const confirmed = window.confirm('Are you sure you want to sign out?');
+    if (!confirmed) return;
+
+    // Clear auth/session
+    await logout();
+
+    // Navigate to login route
+    navigate('/email', { replace: true });
   };
 
   return (
@@ -34,10 +37,10 @@ const UserHeader: React.FC = () => {
               Cadmus
             </span>
           </div>
-          
+
           {/* Divider */}
           <div className="hidden md:block w-px h-8 bg-gray-200"></div>
-          
+
           {/* User info */}
           <div className="flex items-center space-x-3">
             <div className="relative">
@@ -54,7 +57,7 @@ const UserHeader: React.FC = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Right section - Actions */}
         <div className="flex items-center space-x-4">
           <div className="hidden md:flex items-center space-x-4 text-xs text-gray-500">
@@ -66,7 +69,7 @@ const UserHeader: React.FC = () => {
               ID: {user.userId.slice(-8)}
             </span>
           </div>
-          
+
           <button
             onClick={handleLogout}
             className="flex items-center space-x-2 text-sm text-gray-600 hover:text-red-600 transition-all duration-200 px-4 py-2 rounded-lg hover:bg-red-50 group"

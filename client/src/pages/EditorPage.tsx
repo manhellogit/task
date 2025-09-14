@@ -1,21 +1,26 @@
 // client/src/pages/EditorPage.tsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import TiptapEditor from '../components/Editor/TiptapEditor';
-import EmailLogin from '../components/EmailLogin';
 import { useEmailAuth } from '../hooks/useEmailAuth';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import UserHeader from '../components/UserHeader';
 
 const EditorPage: React.FC = () => {
   const { documentId } = useParams();
   const { isAuthenticated, loading, user } = useEmailAuth();
+  const navigate = useNavigate();
 
-  console.log('🏠 EditorPage render:', { isAuthenticated, loading, hasUser: !!user });
+  // If not authenticated, send to /email
+  useEffect(() => {
+    if (!loading && (!isAuthenticated || !user?.email)) {
+      navigate('/email', { replace: true });
+    }
+  }, [loading, isAuthenticated, user?.email, navigate]);
 
-  // Enhanced loading spinner
+  // Loading UI
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+      <div className="flex items-center justify-center ">
         <div className="flex flex-col items-center space-y-6 bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-xl border border-white/20">
           <div className="relative">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-100"></div>
@@ -30,18 +35,16 @@ const EditorPage: React.FC = () => {
     );
   }
 
-  // FIXED: More thorough authentication check
-  if (!isAuthenticated || !user || !user.email) {
-    console.log('🔒 Not authenticated, showing login');
-    return <EmailLogin />;
+  // If unauthenticated, we return null briefly since navigate will push to /email
+  if (!isAuthenticated || !user?.email) {
+    return null;
   }
 
-  // FIXED: Only show editor if fully authenticated
-  console.log('✅ Authenticated, showing editor for:', user.email);
+  // Authenticated → show editor
   return (
-    <div className="editor-page min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+    <div className="editor-page border rounded-2xl">
       <UserHeader />
-      <div className="editor-wrapper bg-white/95 backdrop-blur-sm min-h-screen shadow-2xl border border-white/20 mx-2 md:mx-4 lg:mx-8 rounded-t-2xl mt-2 animate-slide-in">
+      <div className="editor-wrapper bg-white/95 backdrop-blur-sm shadow-2xl border border-white/20 mx-2 md:mx-4 lg:mx-8 rounded-t-2xl mt-2 animate-slide-in">
         <TiptapEditor documentId={documentId} />
       </div>
     </div>

@@ -41,6 +41,30 @@ apiClient.interceptors.response.use(
   }
 );
 
+// NEW: Users API (minimal)
+export interface BackendUser {
+  email: string;
+  username: string;
+  clientId: number;
+  userId: string;
+  lastActiveAt?: string;
+  preferences?: { theme?: string; fontSize?: number };
+}
+
+export const usersApi = {
+  // Create or fetch user by email (backend will upsert if not exists)
+  login: async (email: string): Promise<BackendUser> => {
+    const res = await apiClient.post('/users/login', { email });
+    // backend returns { success, message, data: { user: { ... } } }
+    return res.data?.data?.user as BackendUser;
+  },
+  // Fetch user by email
+  getProfile: async (email: string): Promise<BackendUser> => {
+    const res = await apiClient.get(`/users/profile/${encodeURIComponent(email)}`);
+    return res.data?.data?.user as BackendUser;
+  },
+};
+
 // API endpoints for document management
 export const documentApi = {
   // Get document by ID

@@ -87,7 +87,6 @@ body {
 }
 
 .editor-scroll-container .ProseMirror {
-  min-height: 100%;
   outline: none;
   max-width: 850px;
   margin: 0 auto;

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-
+import { usersApi} from '../services/api';
+import type { BackendUser } from '../services/api';
 export interface User {
   email: string;
   username: string;
@@ -58,40 +59,26 @@ export const useEmailAuth = () => {
   }, []); // Empty dependency array - run only once
 
   const loginWithEmail = useCallback(async (email: string): Promise<boolean> => {
-    console.log('🔐 Attempting login with:', email);
-    
     try {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        throw new Error('Invalid email format');
-      }
+      // call backend to create/fetch the user
+      const backendUser: BackendUser = await usersApi.login(email.trim().toLowerCase());
 
-      const username = email.split('@')[0];
-      const clientId = hashCode(email);
-      
+      // Map backend payload to existing User shape (keep the app unchanged)
       const newUser: User = {
-        email: email.toLowerCase().trim(),
-        username,
-        clientId,
-        userId: `user_${clientId}`,
-        joinedAt: new Date()
+        email: backendUser.email,
+        username: backendUser.username,
+        clientId: backendUser.clientId,
+        userId: backendUser.userId,
+        joinedAt: new Date(), // local session timestamp
       };
 
-      console.log('✅ Login successful, setting user state:', newUser);
-      
-      // Save to localStorage first
       localStorage.setItem('cadmus-user', JSON.stringify(newUser));
-      
-      // Then update state
       setUser(newUser);
       setIsAuthenticated(true);
-      
-      // Force re-render
       forceUpdate();
-      
       return true;
-    } catch (error) {
-      console.error('❌ Login failed:', error);
+    } catch (err) {
+      console.error('❌ Login failed:', err);
       setIsAuthenticated(false);
       return false;
     }
@@ -152,13 +139,3 @@ export const useEmailAuth = () => {
     authKey
   };
 };
-
-function hashCode(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash);
-}
